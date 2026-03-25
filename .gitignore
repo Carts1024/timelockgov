@@ -1,0 +1,19 @@
+/.idea/
+/.vscode/
+/.DS_Store
+
+# Rust build output
+/target/
+
+# Soroban / test artifacts (varies by setup)
+/test_snapshots/
+/*.wasm
+/*.wat
+
+# Logs
+*.log
+
+# Env files (if any get created)
+/.env
+/.env.*
+
