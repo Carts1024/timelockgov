@@ -8,7 +8,7 @@ import {
 } from "./constants";
 import { encodeTextToBytes } from "./codec";
 import { signTransaction } from "./wallet";
-import type { Proposal, TimelockConfig, VoteSupport } from "./types";
+import { ProposalStatus, type Proposal, type TimelockConfig, type VoteSupport } from "./types";
 
 type DynamicClient = contract.Client & {
   [method: string]: (...args: unknown[]) => Promise<unknown>;
@@ -72,6 +72,193 @@ async function callRead<T>(method: string, args?: Record<string, unknown>): Prom
   return tx.result as T;
 }
 
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  return fallback;
+}
+
+function toStringValue(value: unknown, fallback = ""): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "bigint" || typeof value === "number") {
+    return String(value);
+  }
+
+  if (value && typeof (value as { toString?: () => string }).toString === "function") {
+    return (value as { toString: () => string }).toString();
+  }
+
+  return fallback;
+}
+
+function getObjectField(
+  source: Record<string, unknown>,
+  ...keys: string[]
+): unknown {
+  for (const key of keys) {
+    if (key in source) {
+      return source[key];
+    }
+  }
+  return undefined;
+}
+
+function toPlainObject(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  if (raw instanceof Map) {
+    return Object.fromEntries(
+      Array.from(raw.entries()).map(([key, value]) => [String(key), value])
+    );
+  }
+
+  if ("entries" in raw && typeof (raw as { entries?: () => Iterable<unknown> }).entries === "function") {
+    try {
+      const entries = Array.from(
+        (raw as { entries: () => Iterable<[unknown, unknown]> }).entries()
+      ).map(([key, value]) => [String(key), value] as const);
+
+      if (entries.length > 0) {
+        return Object.fromEntries(entries);
+      }
+    } catch {
+      // Ignore and continue trying other representations.
+    }
+  }
+
+  const asRecord = raw as Record<string, unknown>;
+
+  if ("value" in asRecord) {
+    const inner = toPlainObject(asRecord.value);
+    if (inner) {
+      return inner;
+    }
+  }
+
+  if ("result" in asRecord) {
+    const inner = toPlainObject(asRecord.result);
+    if (inner) {
+      return inner;
+    }
+  }
+
+  if ("_value" in asRecord) {
+    const inner = toPlainObject(asRecord._value);
+    if (inner) {
+      return inner;
+    }
+  }
+
+  if ("_attributes" in asRecord) {
+    const attributes = toPlainObject(asRecord._attributes);
+    if (attributes) {
+      return attributes;
+    }
+  }
+
+  if ("toJSON" in asRecord && typeof asRecord.toJSON === "function") {
+    try {
+      const fromJson = toPlainObject(asRecord.toJSON());
+      if (fromJson) {
+        return fromJson;
+      }
+    } catch {
+      // Ignore JSON conversion errors.
+    }
+  }
+
+  return asRecord;
+}
+
+function normalizeProposal(raw: unknown): Proposal {
+  if (Array.isArray(raw)) {
+    return {
+      id: toNumber(raw[0]),
+      proposer: toStringValue(raw[1]),
+      title: (raw[2] as Uint8Array | string | undefined) ?? "",
+      description: (raw[3] as Uint8Array | string | undefined) ?? "",
+      vote_start: toNumber(raw[4]),
+      vote_end: toNumber(raw[5]),
+      queued_at: toNumber(raw[6]),
+      executable_at: toNumber(raw[7]),
+      expires_at: toNumber(raw[8]),
+      votes_for: toNumber(raw[9]),
+      votes_against: toNumber(raw[10]),
+      votes_abstain: toNumber(raw[11]),
+      status: toNumber(raw[12]) as ProposalStatus,
+    };
+  }
+
+  const proposal = toPlainObject(raw);
+  if (proposal) {
+    const fields = toPlainObject(getObjectField(proposal, "fields", "value", "data")) ?? proposal;
+
+    return {
+      id: toNumber(getObjectField(fields, "id")),
+      proposer: toStringValue(getObjectField(fields, "proposer")),
+      title: (getObjectField(fields, "title") as Uint8Array | string | undefined) ?? "",
+      description:
+        (getObjectField(fields, "description") as Uint8Array | string | undefined) ?? "",
+      vote_start: toNumber(getObjectField(fields, "vote_start", "voteStart")),
+      vote_end: toNumber(getObjectField(fields, "vote_end", "voteEnd")),
+      queued_at: toNumber(getObjectField(fields, "queued_at", "queuedAt")),
+      executable_at: toNumber(getObjectField(fields, "executable_at", "executableAt")),
+      expires_at: toNumber(getObjectField(fields, "expires_at", "expiresAt")),
+      votes_for: toNumber(getObjectField(fields, "votes_for", "votesFor")),
+      votes_against: toNumber(getObjectField(fields, "votes_against", "votesAgainst")),
+      votes_abstain: toNumber(getObjectField(fields, "votes_abstain", "votesAbstain")),
+      status: toNumber(getObjectField(fields, "status")) as ProposalStatus,
+    };
+  }
+
+  throw new Error("Unexpected proposal response shape from contract.");
+}
+
+function normalizeConfig(raw: unknown): TimelockConfig {
+  if (Array.isArray(raw)) {
+    return {
+      timelock_delay: toNumber(raw[0]),
+      execution_window: toNumber(raw[1]),
+      quorum: toNumber(raw[2]),
+      voting_period: toNumber(raw[3]),
+      paused: Boolean(raw[4]),
+    };
+  }
+
+  const config = toPlainObject(raw);
+  if (config) {
+    const fields = toPlainObject(getObjectField(config, "fields", "value", "data")) ?? config;
+
+    return {
+      timelock_delay: toNumber(getObjectField(fields, "timelock_delay", "timelockDelay")),
+      execution_window: toNumber(
+        getObjectField(fields, "execution_window", "executionWindow")
+      ),
+      quorum: toNumber(getObjectField(fields, "quorum")),
+      voting_period: toNumber(getObjectField(fields, "voting_period", "votingPeriod")),
+      paused: Boolean(getObjectField(fields, "paused")),
+    };
+  }
+
+  throw new Error("Unexpected config response shape from contract.");
+}
+
 async function callWrite<T>(
   signerAddress: string,
   method: string,
@@ -99,7 +286,8 @@ export async function getLatestLedgerSequence(): Promise<number> {
 }
 
 export async function getConfig(): Promise<TimelockConfig> {
-  return callRead<TimelockConfig>("get_config");
+  const raw = await callRead<unknown>("get_config");
+  return normalizeConfig(raw);
 }
 
 export async function getProposalCount(): Promise<number> {
@@ -107,7 +295,8 @@ export async function getProposalCount(): Promise<number> {
 }
 
 export async function getProposal(proposalId: number): Promise<Proposal> {
-  return callRead<Proposal>("get_proposal", { proposal_id: proposalId });
+  const raw = await callRead<unknown>("get_proposal", { proposal_id: proposalId });
+  return normalizeProposal(raw);
 }
 
 export async function hasVoted(proposalId: number, voter: string): Promise<boolean> {

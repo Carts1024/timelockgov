@@ -32,6 +32,28 @@ interface UseGovernanceState {
 }
 
 const EMPTY_MAP: Record<number, boolean> = {};
+const PROPOSAL_FETCH_RETRIES = 3;
+
+async function getProposalWithRetry(id: number): Promise<Proposal> {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= PROPOSAL_FETCH_RETRIES; attempt += 1) {
+    try {
+      return await getProposal(id);
+    } catch (error) {
+      lastError = error;
+
+      if (attempt < PROPOSAL_FETCH_RETRIES) {
+        // Small backoff helps with transient RPC failures.
+        await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+      }
+    }
+  }
+
+  throw new Error(
+    `Failed to load proposal #${id}. ${getReadableError(lastError)}`
+  );
+}
 
 export function useGovernance(address: string | null) {
   const [state, setState] = useState<UseGovernanceState>({
@@ -61,17 +83,7 @@ export function useGovernance(address: string | null) {
 
       const proposalIds = Array.from({ length: proposalCount }, (_, index) => proposalCount - index);
 
-      const proposalResults = await Promise.all(
-        proposalIds.map(async (id): Promise<Proposal | null> => {
-          try {
-            return await getProposal(id);
-          } catch {
-            return null;
-          }
-        })
-      );
-
-      const proposals = proposalResults.filter((p): p is Proposal => p !== null);
+      const proposals = await Promise.all(proposalIds.map((id) => getProposalWithRetry(id)));
 
       const votedEntries =
         address === null
@@ -131,17 +143,20 @@ export function useGovernance(address: string | null) {
   }, [refresh]);
 
   const executeAction = useCallback(
-    async (action: string, run: () => Promise<void>) => {
+    async (action: string, run: () => Promise<void>): Promise<string | null> => {
       setState((prev) => ({ ...prev, actionInFlight: action, error: null }));
 
       try {
         await run();
         await refresh();
+        return null;
       } catch (error) {
+        const readableError = getReadableError(error);
         setState((prev) => ({
           ...prev,
-          error: getReadableError(error),
+          error: readableError,
         }));
+        return readableError;
       } finally {
         setState((prev) => ({ ...prev, actionInFlight: null }));
       }
@@ -153,64 +168,64 @@ export function useGovernance(address: string | null) {
     () => ({
       createProposal: async (title: string, description: string) => {
         if (!address) {
-          throw new Error("Connect your wallet first.");
+          return "Connect your wallet first.";
         }
 
-        await executeAction("propose", async () => {
+        return executeAction("propose", async () => {
           await propose(address, title, description);
         });
       },
       castVote: async (proposalId: number, support: VoteSupport) => {
         if (!address) {
-          throw new Error("Connect your wallet first.");
+          return "Connect your wallet first.";
         }
 
-        await executeAction(`vote-${proposalId}`, async () => {
+        return executeAction(`vote-${proposalId}`, async () => {
           await vote(address, proposalId, support);
         });
       },
       finalizeProposal: async (proposalId: number) => {
         if (!address) {
-          throw new Error("Connect your wallet first.");
+          return "Connect your wallet first.";
         }
 
-        await executeAction(`finalize-${proposalId}`, async () => {
+        return executeAction(`finalize-${proposalId}`, async () => {
           await finalize(address, proposalId);
         });
       },
       queueProposal: async (proposalId: number) => {
         if (!address) {
-          throw new Error("Connect your wallet first.");
+          return "Connect your wallet first.";
         }
 
-        await executeAction(`queue-${proposalId}`, async () => {
+        return executeAction(`queue-${proposalId}`, async () => {
           await queue(address, proposalId);
         });
       },
       executeProposal: async (proposalId: number) => {
         if (!address) {
-          throw new Error("Connect your wallet first.");
+          return "Connect your wallet first.";
         }
 
-        await executeAction(`execute-${proposalId}`, async () => {
+        return executeAction(`execute-${proposalId}`, async () => {
           await execute(address, proposalId);
         });
       },
       cancelProposal: async (proposalId: number) => {
         if (!address) {
-          throw new Error("Connect your wallet first.");
+          return "Connect your wallet first.";
         }
 
-        await executeAction(`cancel-${proposalId}`, async () => {
+        return executeAction(`cancel-${proposalId}`, async () => {
           await cancel(address, proposalId);
         });
       },
       togglePaused: async (paused: boolean) => {
         if (!address) {
-          throw new Error("Connect your wallet first.");
+          return "Connect your wallet first.";
         }
 
-        await executeAction("set-paused", async () => {
+        return executeAction("set-paused", async () => {
           await setPaused(address, paused);
         });
       },
@@ -221,10 +236,10 @@ export function useGovernance(address: string | null) {
         voting_period: number;
       }) => {
         if (!address) {
-          throw new Error("Connect your wallet first.");
+          return "Connect your wallet first.";
         }
 
-        await executeAction("update-config", async () => {
+        return executeAction("update-config", async () => {
           await updateConfig(address, payload);
         });
       },

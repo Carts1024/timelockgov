@@ -239,6 +239,18 @@ button:disabled {
   margin: 0.45rem 0 0;
 }
 
+.inline-error {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--danger);
+}
+
+.inline-success {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #0b6a38;
+}
+
 .error-banner {
   margin: 1rem 0 0;
   padding: 0.68rem 0.8rem;

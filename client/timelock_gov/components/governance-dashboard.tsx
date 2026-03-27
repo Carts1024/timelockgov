@@ -73,11 +73,11 @@ function ProposalCard({
   actionInFlight: string | null;
   hasVoted: boolean;
   isExecutable: boolean;
-  onVote: (proposalId: number, support: 0 | 1 | 2) => Promise<void>;
-  onFinalize: (proposalId: number) => Promise<void>;
-  onQueue: (proposalId: number) => Promise<void>;
-  onExecute: (proposalId: number) => Promise<void>;
-  onCancel: (proposalId: number) => Promise<void>;
+  onVote: (proposalId: number, support: 0 | 1 | 2) => Promise<string | null>;
+  onFinalize: (proposalId: number) => Promise<string | null>;
+  onQueue: (proposalId: number) => Promise<string | null>;
+  onExecute: (proposalId: number) => Promise<string | null>;
+  onCancel: (proposalId: number) => Promise<string | null>;
 }) {
   const status = proposal.status as ProposalStatus;
   const statusClass = STATUS_CLASS[status] ?? "status";
@@ -92,6 +92,31 @@ function ProposalCard({
   const canExecute = status === ProposalStatus.Queued && isExecutable;
   const canCancel =
     status !== ProposalStatus.Executed && status !== ProposalStatus.Cancelled;
+
+  let voteDisabledReason: string | null = null;
+  if (!canVote) {
+    if (status !== ProposalStatus.Active) {
+      voteDisabledReason = "Voting is only available while proposal status is Active.";
+    } else if (latestLedger < proposal.vote_start) {
+      voteDisabledReason = `Voting opens at ledger L${proposal.vote_start}.`;
+    } else if (latestLedger > proposal.vote_end) {
+      voteDisabledReason = "Voting window already closed. Finalize to move proposal state.";
+    } else if (hasVoted) {
+      voteDisabledReason = "You already voted on this proposal.";
+    }
+  }
+
+  const queueDisabledReason =
+    status !== ProposalStatus.Passed
+      ? "Queue is available only after proposal status becomes Passed."
+      : null;
+
+  const executeDisabledReason =
+    status !== ProposalStatus.Queued
+      ? "Execute is available only when proposal status is Queued."
+      : !isExecutable
+        ? `Execution not unlocked yet. Available at L${proposal.executable_at}.`
+        : null;
 
   const proposalBusy = actionInFlight?.includes(`-${proposal.id}`) ?? false;
 
@@ -134,6 +159,7 @@ function ProposalCard({
           Abstain
         </button>
       </div>
+      {!proposalBusy && voteDisabledReason && <p className="subtle-note">{voteDisabledReason}</p>}
 
       <div className="actions-row">
         <button disabled={!canFinalize || proposalBusy} onClick={() => void onFinalize(proposal.id)}>
@@ -149,6 +175,8 @@ function ProposalCard({
           Cancel
         </button>
       </div>
+      {!proposalBusy && queueDisabledReason && <p className="subtle-note">{queueDisabledReason}</p>}
+      {!proposalBusy && executeDisabledReason && <p className="subtle-note">{executeDisabledReason}</p>}
 
       {hasVoted && <p className="subtle-note">You already voted on this proposal.</p>}
       {status === ProposalStatus.Queued && !isExecutable && (
@@ -158,12 +186,21 @@ function ProposalCard({
   );
 }
 
+function getProposalReactKey(proposal: Proposal, index: number): string {
+  const idPart = String(proposal.id);
+  const proposerPart = String(proposal.proposer);
+  const voteStartPart = String(proposal.vote_start);
+  return `${idPart}-${proposerPart}-${voteStartPart}-${index}`;
+}
+
 export function GovernanceDashboard() {
   const wallet = useWallet();
   const governance = useGovernance(wallet.address);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [proposalFormError, setProposalFormError] = useState<string | null>(null);
+  const [proposalFormSuccess, setProposalFormSuccess] = useState<string | null>(null);
 
   const overview = governance.overview;
 
@@ -171,15 +208,28 @@ export function GovernanceDashboard() {
 
   const onCreateProposal = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setProposalFormError(null);
+    setProposalFormSuccess(null);
 
     const parsed = proposalSchema.safeParse({ title, description });
     if (!parsed.success) {
+      setProposalFormError(parsed.error.issues[0]?.message ?? "Please check proposal inputs.");
       return;
     }
 
-    await governance.actions.createProposal(parsed.data.title, parsed.data.description);
+    const submitError = await governance.actions.createProposal(
+      parsed.data.title,
+      parsed.data.description
+    );
+
+    if (submitError) {
+      setProposalFormError(submitError);
+      return;
+    }
+
     setTitle("");
     setDescription("");
+    setProposalFormSuccess("Proposal submitted successfully.");
   };
 
   const onSaveConfig = async (event: FormEvent<HTMLFormElement>) => {
@@ -286,6 +336,8 @@ export function GovernanceDashboard() {
             <button disabled={!wallet.address || governance.actionInFlight === "propose"}>
               Submit Proposal
             </button>
+            {proposalFormError && <p className="inline-error">{proposalFormError}</p>}
+            {proposalFormSuccess && <p className="inline-success">{proposalFormSuccess}</p>}
           </form>
         </article>
 
@@ -371,9 +423,9 @@ export function GovernanceDashboard() {
         )}
 
         <div className="proposal-list">
-          {overview?.proposals.map((proposal) => (
+          {overview?.proposals.map((proposal, index) => (
             <ProposalCard
-              key={proposal.id}
+              key={getProposalReactKey(proposal, index)}
               proposal={proposal}
               latestLedger={overview.latestLedger}
               actionInFlight={governance.actionInFlight}

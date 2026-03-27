@@ -1,7 +1,8 @@
 import { ContractErrorCode } from "./types";
 
 const ERROR_LABEL: Record<number, string> = {
-  [ContractErrorCode.NotInitialized]: "Contract is not initialized yet.",
+  [ContractErrorCode.NotInitialized]:
+    "Contract is deployed but not initialized on this network. Run initialize once for the configured contract ID.",
   [ContractErrorCode.AlreadyInitialized]: "Contract has already been initialized.",
   [ContractErrorCode.Unauthorized]: "You are not authorized for this action.",
   [ContractErrorCode.ProposalNotFound]: "Proposal not found.",
