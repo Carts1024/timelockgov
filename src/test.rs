@@ -18,14 +18,7 @@ fn setup() -> (Env, Address, Address, Address) {
 
     // timelock_delay: 50 ledgers, execution_window: 100 ledgers
     // quorum: 2 votes, voting_period: 20 ledgers
-    client.initialize(
-        &admin,
-        &guardian,
-        &50u32,
-        &100u32,
-        &2u32,
-        &20u32,
-    );
+    client.initialize(&admin, &guardian, &50u32, &100u32, &2u32, &20u32);
 
     (e, contract_id, admin, guardian)
 }
@@ -35,10 +28,7 @@ fn make_proposal(e: &Env, contract_id: &Address, proposer: &Address) -> u32 {
     client.propose(
         proposer,
         &Bytes::from_slice(e, b"Upgrade treasury cap"),
-        &Bytes::from_slice(
-            e,
-            b"Increase the max withdrawal cap from 1000 to 5000",
-        ),
+        &Bytes::from_slice(e, b"Increase the max withdrawal cap from 1000 to 5000"),
     )
 }
 
@@ -78,14 +68,7 @@ fn test_double_initialize_rejected() {
     let (e, contract_id, admin, guardian) = setup();
     let client = TimelockGovClient::new(&e, &contract_id);
 
-    let result = client.try_initialize(
-        &admin,
-        &guardian,
-        &50u32,
-        &100u32,
-        &2u32,
-        &20u32,
-    );
+    let result = client.try_initialize(&admin, &guardian, &50u32, &100u32, &2u32, &20u32);
     assert!(result.is_err());
 }
 

@@ -2,8 +2,7 @@
 extern crate alloc;
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contractmeta, contracttype,
-    Address, Bytes, Env, Vec,
+    contract, contracterror, contractimpl, contractmeta, contracttype, Address, Bytes, Env, Vec,
 };
 
 contractmeta!(
@@ -138,7 +137,9 @@ impl TimelockGov {
         e.storage().instance().set(&StorageKey::Admin, &admin);
         e.storage().instance().set(&StorageKey::Guardian, &guardian);
         e.storage().instance().set(&StorageKey::Config, &config);
-        e.storage().instance().set(&StorageKey::ProposalCount, &0u32);
+        e.storage()
+            .instance()
+            .set(&StorageKey::ProposalCount, &0u32);
 
         Ok(())
     }
@@ -187,9 +188,7 @@ impl TimelockGov {
         e.storage()
             .instance()
             .set(&StorageKey::Proposal(id), &proposal);
-        e.storage()
-            .instance()
-            .set(&StorageKey::ProposalCount, &id);
+        e.storage().instance().set(&StorageKey::ProposalCount, &id);
 
         Ok(id)
     }
@@ -274,11 +273,12 @@ impl TimelockGov {
 
         let total_votes = proposal.votes_for + proposal.votes_against + proposal.votes_abstain;
 
-        let new_status = if total_votes < config.quorum || proposal.votes_for <= proposal.votes_against {
-            ProposalStatus::Defeated
-        } else {
-            ProposalStatus::Passed
-        };
+        let new_status =
+            if total_votes < config.quorum || proposal.votes_for <= proposal.votes_against {
+                ProposalStatus::Defeated
+            } else {
+                ProposalStatus::Passed
+            };
 
         proposal.status = new_status;
         e.storage()
