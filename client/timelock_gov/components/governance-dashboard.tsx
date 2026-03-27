@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useState, useSyncExternalStore } from "react";
 import { z } from "zod";
 
 import { useGovernance } from "@/hooks/use-governance";
@@ -33,6 +33,72 @@ const STATUS_CLASS: Record<ProposalStatus, string> = {
   [ProposalStatus.Defeated]: "status status-defeated",
   [ProposalStatus.Expired]: "status status-expired",
 };
+
+const TUTORIAL_STORAGE_KEY = "timelockgov.tutorialSeen";
+
+function subscribeTutorialSeen(): () => void {
+  return () => undefined;
+}
+
+function getTutorialSeenSnapshot(): boolean {
+  return window.localStorage.getItem(TUTORIAL_STORAGE_KEY) === "1";
+}
+
+function getTutorialSeenServerSnapshot(): boolean {
+  // Keep SSR and hydration output stable, then reconcile from localStorage.
+  return true;
+}
+
+const TUTORIAL_TERMS: Array<{ term: string; meaning: string }> = [
+  {
+    term: "Ledger",
+    meaning: "A blockchain tick. Voting and execution timing are measured in ledger numbers, not wall-clock time.",
+  },
+  {
+    term: "Proposal",
+    meaning: "A governance item created by a proposer. It goes through voting, finalization, and potentially execution.",
+  },
+  {
+    term: "Vote Window",
+    meaning: "The ledger interval where voting is open. You can vote only between vote_start and vote_end.",
+  },
+  {
+    term: "Quorum",
+    meaning: "Minimum participation threshold required for a proposal to be considered valid.",
+  },
+  {
+    term: "Finalize",
+    meaning: "Closes an active proposal after voting ends and marks it as Passed or Defeated.",
+  },
+  {
+    term: "Queue",
+    meaning: "Moves a passed proposal into timelock so it can only be executed after the delay.",
+  },
+  {
+    term: "Timelock Delay",
+    meaning: "Required number of ledgers to wait after queueing before execution is allowed.",
+  },
+  {
+    term: "Execution Window",
+    meaning: "Limited ledger range where a queued proposal can be executed before it expires.",
+  },
+  {
+    term: "Execute",
+    meaning: "Applies the queued proposal action after timelock delay has elapsed and before expiry.",
+  },
+  {
+    term: "Guardian",
+    meaning: "Safety role that can pause the system and cancel proposals.",
+  },
+  {
+    term: "Admin",
+    meaning: "Role that can update governance configuration and cancel proposals.",
+  },
+  {
+    term: "Paused",
+    meaning: "Emergency mode where state-changing actions are blocked until unpaused.",
+  },
+];
 
 function shortAddress(address: string | null): string {
   if (!address) {
@@ -201,10 +267,27 @@ export function GovernanceDashboard() {
   const [description, setDescription] = useState("");
   const [proposalFormError, setProposalFormError] = useState<string | null>(null);
   const [proposalFormSuccess, setProposalFormSuccess] = useState<string | null>(null);
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
+  const [tutorialSeenOverride, setTutorialSeenOverride] = useState<boolean | null>(null);
+
+  const tutorialSeenSnapshot = useSyncExternalStore(
+    subscribeTutorialSeen,
+    getTutorialSeenSnapshot,
+    getTutorialSeenServerSnapshot
+  );
+
+  const hasSeenTutorial = tutorialSeenOverride ?? tutorialSeenSnapshot;
+  const isTutorialVisible = isTutorialOpen || !hasSeenTutorial;
 
   const overview = governance.overview;
 
   const walletLabel = useMemo(() => shortAddress(wallet.address), [wallet.address]);
+
+  const closeTutorial = () => {
+    setIsTutorialOpen(false);
+    window.localStorage.setItem(TUTORIAL_STORAGE_KEY, "1");
+    setTutorialSeenOverride(true);
+  };
 
   const onCreateProposal = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -261,6 +344,11 @@ export function GovernanceDashboard() {
             Proposals cannot be executed immediately after passing. They must clear vote,
             finalize, queue, and delay windows before execution.
           </p>
+          <div className="hero-actions">
+            <button type="button" onClick={() => setIsTutorialOpen(true)}>
+              Tutorial
+            </button>
+          </div>
         </div>
 
         <div className="wallet-panel">
@@ -440,6 +528,38 @@ export function GovernanceDashboard() {
           ))}
         </div>
       </section>
+
+      {isTutorialVisible && (
+        <div className="tutorial-overlay" role="presentation" onClick={closeTutorial}>
+          <article
+            className="tutorial-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Governance tutorial"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="tutorial-header">
+              <h2>How This Governance Flow Works</h2>
+              <button type="button" onClick={closeTutorial}>
+                Close
+              </button>
+            </header>
+
+            <p className="subtle-note">
+              Quick glossary for the terms used across this dashboard.
+            </p>
+
+            <div className="tutorial-grid">
+              {TUTORIAL_TERMS.map(({ term, meaning }) => (
+                <section key={term} className="tutorial-term-card">
+                  <h3>{term}</h3>
+                  <p>{meaning}</p>
+                </section>
+              ))}
+            </div>
+          </article>
+        </div>
+      )}
     </div>
   );
 }
