@@ -2,6 +2,19 @@
 
 Governance with enforced delay. Proposals that pass a community vote cannot be executed immediately — they enter a mandatory waiting period, giving token holders time to review, contest, or exit before changes take effect.
 
+## Stellar Expert Link
+
+https://stellar.expert/explorer/testnet/contract/CAYVCPVE7APQDB6DFZYXWA575P2UVMICMRAHYJMPJB5XAY4MCNBU6LIB
+
+
+## Smart Contract Address
+
+CAYVCPVE7APQDB6DFZYXWA575P2UVMICMRAHYJMPJB5XAY4MCNBU6LIB
+
+
+## Smart Contract Short Description
+This Soroban smart contract implements on-chain governance with an enforced timelock. Proposals go through propose, vote, finalize, and queue stages, then can only be executed after a mandatory delay and before an execution window expires. It also includes admin and guardian controls for updating configuration, cancelling proposals, and pausing critical actions in emergencies.
+
 ---
 
 ## Why This Exists
@@ -277,6 +290,3 @@ stellar contract invoke \
 # Stellar-Bootcamp
 
 
-#Contract address:
-
-CBQN3ENF5FNGLVYD4TWX3MIWI2T2AM57D3EPH4CSIOPVW7O5ILBZLQ7K
